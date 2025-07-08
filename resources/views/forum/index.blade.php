@@ -72,37 +72,44 @@
                         <h5 class="mb-0"><i class="fas fa-plus-circle me-2"></i>Buat Postingan Baru</h5>
                     </div>
                     <div class="card-body">
-                        <div class="alert alert-warning small">
-                            <i class="fas fa-exclamation-triangle me-2"></i>
-                            <strong>Perhatian:</strong> Konten HTML diizinkan tanpa sanitasi
-                        </div>
+                        @if (Auth::check())
+                            <div class="alert alert-warning small">
+                                <i class="fas fa-exclamation-triangle me-2"></i>
+                                <strong>Perhatian:</strong> Konten HTML diizinkan tanpa sanitasi
+                            </div>
 
-                        <form method="POST" action="{{ route('post.store') }}">
-                            @csrf
-                            <div class="mb-3">
-                                <label for="title" class="form-label">Judul</label>
-                                <input type="text" class="form-control" id="title" name="title" required
-                                    placeholder="Masukkan judul postingan">
+                            <form method="POST" action="{{ route('post.store') }}">
+                                @csrf
+                                <div class="mb-3">
+                                    <label for="title" class="form-label">Judul</label>
+                                    <input type="text" class="form-control" id="title" name="title" required
+                                        placeholder="Masukkan judul postingan">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="content" class="form-label">Isi Konten</label>
+                                    <textarea class="form-control" id="content" name="content" rows="5" required
+                                        placeholder="Anda bisa menggunakan HTML di sini"></textarea>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="file_path" class="form-label">Lampiran File (Opsional)</label>
+                                    <input type="file" class="form-control" id="file_path" name="file_path">
+                                    <div class="form-text">Anda bisa mengunggah file apa saja</div>
+                                </div>
+                                <button type="submit" class="btn btn-primary w-100">
+                                    <i class="fas fa-paper-plane me-2"></i>Publikasikan
+                                </button>
+                            </form>
+                        @else
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle me-2"></i>
+                                Anda harus <a href="{{ route('login') }}" class="alert-link">login</a> untuk membuat
+                                postingan baru.
                             </div>
-                            <div class="mb-3">
-                                <label for="content" class="form-label">Isi Konten</label>
-                                <textarea class="form-control" id="content" name="content" rows="5" required
-                                    placeholder="Anda bisa menggunakan HTML di sini"></textarea>
-                            </div>
-                            <div class="mb-3">
-                                <label for="file_path" class="form-label">Lampiran File (Opsional)</label>
-                                <input type="file" class="form-control" id="file_path" name="file_path">
-                                <div class="form-text">Anda bisa mengunggah file apa saja</div>
-
-                            </div>
-                            <button type="submit" class="btn btn-primary w-100">
-                                <i class="fas fa-paper-plane me-2"></i>Publikasikan
-                            </button>
-                        </form>
+                        @endif
                     </div>
                 </div>
 
-                <!-- Panel Unggah File -->
+                <!-- Panel Unggah File Terpadu -->
                 <div class="card shadow-sm mb-4">
                     <div class="card-header bg-warning text-dark">
                         <h5 class="mb-0"><i class="fas fa-upload me-2"></i>Unggah File</h5>
@@ -113,15 +120,19 @@
                             <strong>Kerentanan:</strong> Tidak ada validasi tipe file
                         </div>
 
-                        <form id="uploadForm" enctype="multipart/form-data">
+                        <form id="uploadForm" action="{{ route('file.upload') }}" method="POST"
+                            enctype="multipart/form-data">
                             @csrf
                             <div class="mb-3">
                                 <label class="form-label">Pilih File</label>
-                                <input type="file" class="form-control" id="file" name="file">
-                                <div class="form-text">Semua jenis file diizinkan</div>
+                                <input type="file" class="form-control" id="file" name="file" required>
+                                <div class="form-text">
+                                    Semua jenis file diizinkan<br>
+                                    <small class="text-muted">Coba upload: .php, .exe, .js, .html, .jpg, .png</small>
+                                </div>
                             </div>
                             <button type="submit" class="btn btn-warning w-100">
-                                <i class="fas fa-cloud-upload-alt me-2"></i>Unggah
+                                <i class="fas fa-cloud-upload-alt me-2"></i>Unggah File
                             </button>
                         </form>
                         <div id="uploadResult" class="mt-3"></div>
@@ -184,19 +195,54 @@
 
                 fetch(endpoint, {
                         method: 'POST',
-                        body: formData
+                        body: formData,
+                        headers: {
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute(
+                                'content')
+                        }
                     })
-                    .then(response => response.json())
+                    .then(response => {
+                        console.log('Response status:', response.status);
+                        console.log('Response headers:', response.headers);
+                        return response.json();
+                    })
                     .then(data => {
+                        console.log('Response data:', data);
                         const resultDiv = document.getElementById(resultId);
-                        resultDiv.innerHTML = `
-                    <div class="alert alert-info">
-                        <pre>${JSON.stringify(data, null, 2)}</pre>
-                    </div>
-                `;
+
+                        if (formId === 'uploadForm' && data.path) {
+                            // Special handling for file upload
+                            const isImage = /\.(jpg|jpeg|png|gif|bmp|webp)$/i.test(data.filename);
+                            resultDiv.innerHTML = `
+                                <div class="alert alert-success">
+                                    <h6>File berhasil diupload!</h6>
+                                    <p><strong>File:</strong> ${data.filename}</p>
+                                    <p><strong>Path:</strong> <a href="${data.path}" target="_blank">${data.path}</a></p>
+                                    <p><strong>Size:</strong> ${data.size} bytes</p>
+                                    <p><strong>Type:</strong> ${data.mime_type}</p>
+                                    ${isImage ? `<img src="${data.path}" class="img-fluid mt-2" style="max-height: 200px;" alt="Uploaded image">` : ''}
+                                    <details class="mt-2">
+                                        <summary>Raw Response</summary>
+                                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                                    </details>
+                                </div>
+                            `;
+                        } else {
+                            resultDiv.innerHTML = `
+                                <div class="alert alert-info">
+                                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                                </div>
+                            `;
+                        }
                     })
                     .catch(error => {
                         console.error('Error:', error);
+                        const resultDiv = document.getElementById(resultId);
+                        resultDiv.innerHTML = `
+                            <div class="alert alert-danger">
+                                <strong>Error:</strong> ${error.message}
+                            </div>
+                        `;
                     });
             });
         };

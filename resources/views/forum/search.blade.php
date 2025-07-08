@@ -106,15 +106,6 @@
                                 </div>
                             </div>
 
-                            <div class="mb-3">
-                                <label for="category" class="form-label">Kategori</label>
-                                <div class="input-group">
-                                    <span class="input-group-text"><i class="bi bi-tag"></i></span>
-                                    <input type="text" class="form-control" id="category" name="category"
-                                        placeholder="Masukkan kategori">
-                                </div>
-                            </div>
-
                             <button type="submit" class="btn btn-primary w-100">
                                 <i class="bi bi-search me-2"></i>Cari
                             </button>

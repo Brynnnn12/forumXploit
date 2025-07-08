@@ -8,6 +8,9 @@ use App\Models\Comment;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Exception;
+use DOMDocument;
 
 class ForumController extends Controller
 {
@@ -32,9 +35,13 @@ class ForumController extends Controller
 
     public function store(Request $request)
     {
-        // No validation or authorization - vulnerability
+        // VULNERABILITY: Still no proper validation, but require login
+        if (!Auth::check()) {
+            return redirect()->route('login')->with('error', 'Anda harus login untuk membuat postingan.');
+        }
+
         Post::create([
-            'user_id' => Auth::id() ?? 1, // Default to user 1 if not logged in
+            'user_id' => Auth::id(),
             'title' => $request->input('title'),
             'content' => $request->input('content'), // Raw HTML - XSS risk
             'file_path' => $request->input('file_path'),
@@ -45,10 +52,14 @@ class ForumController extends Controller
 
     public function storeComment(Request $request)
     {
-        // No validation or authorization - vulnerability
+        // VULNERABILITY: Still no proper validation, but require login
+        if (!Auth::check()) {
+            return redirect()->route('login')->with('error', 'Anda harus login untuk menambahkan komentar.');
+        }
+
         Comment::create([
             'post_id' => $request->input('post_id'),
-            'user_id' => Auth::id() ?? 1, // Default to user 1 if not logged in
+            'user_id' => Auth::id(),
             'content' => $request->input('content'), // No sanitization - XSS risk
         ]);
 
@@ -61,31 +72,67 @@ class ForumController extends Controller
         // A08: Executable files can be uploaded
         // A08: No file signature verification
 
+        Log::info('Upload request received', ['has_file' => $request->hasFile('file')]);
+
         if ($request->hasFile('file')) {
             $file = $request->file('file');
             $filename = $file->getClientOriginalName(); // Original filename - vulnerability
+
+            Log::info('File details', [
+                'filename' => $filename,
+                'size' => $file->getSize(),
+                'mime' => $file->getMimeType(),
+                'temp_path' => $file->getPathname()
+            ]);
 
             // A08: No file content validation
             // A08: Dangerous file extensions allowed
             $allowedExtensions = ['php', 'exe', 'bat', 'sh', 'js', 'jsp', 'asp'];
             $extension = $file->getClientOriginalExtension();
 
-            $path = $file->storeAs('uploads', $filename, 'public'); // No extension checking
+            try {
+                // Store the file in public disk
+                $path = $file->storeAs('uploads', $filename, 'public');
+                Log::info('File stored', ['path' => $path, 'full_path' => storage_path('app/public/' . $path)]);
 
-            // A08: Create executable file with dangerous content
-            if ($extension === 'php') {
-                $phpContent = "<?php\n// Vulnerable PHP file uploaded\necho 'File executed successfully!';\nphpinfo();\n?>";
-                file_put_contents(storage_path('app/public/' . $path), $phpContent);
+                // Verify file exists
+                $fullPath = storage_path('app/public/' . $path);
+                $exists = file_exists($fullPath);
+                Log::info('File verification', ['exists' => $exists, 'full_path' => $fullPath]);
+
+                // A08: Create executable file with dangerous content
+                if ($extension === 'php') {
+                    $phpContent = "<?php\n// Vulnerable PHP file uploaded\necho 'File executed successfully!';\nphpinfo();\n?>";
+                    file_put_contents($fullPath, $phpContent);
+                    Log::info('PHP content replaced');
+                }
+
+                // Return success response
+                return response()->json([
+                    'success' => true,
+                    'path' => '/storage/' . $path,
+                    'filename' => $filename,
+                    'extension' => $extension,
+                    'size' => $file->getSize(),
+                    'mime_type' => $file->getMimeType(),
+                    'message' => 'File uploaded successfully - executable files allowed!',
+                    'vulnerability' => 'A08: Security Misconfiguration - Dangerous file upload',
+                    'debug' => [
+                        'stored_path' => $path,
+                        'full_path' => $fullPath,
+                        'file_exists' => $exists
+                    ]
+                ]);
+            } catch (Exception $e) {
+                Log::error('Upload failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Upload failed: ' . $e->getMessage()
+                ], 500);
             }
-
-            return response()->json([
-                'path' => '/storage/' . $path,
-                'filename' => $filename,
-                'extension' => $extension,
-                'message' => 'File uploaded successfully - executable files allowed!'
-            ]);
         }
 
+        Log::warning('No file in request');
         return response()->json(['error' => 'No file uploaded'], 400);
     }
 
@@ -303,14 +350,9 @@ class ForumController extends Controller
     public function searchPosts(Request $request)
     {
         $query = $request->input('q');
-        $category = $request->input('category', 'all');
 
-        // VULNERABILITY: Multiple SQL injection points
-        $sql = "SELECT * FROM posts WHERE title LIKE '%$query%'";
-
-        if ($category !== 'all') {
-            $sql .= " AND category = '$category'";
-        }
+        // VULNERABILITY: SQL injection vulnerability
+        $sql = "SELECT * FROM posts WHERE title LIKE '%$query%' OR content LIKE '%$query%'";
 
         $posts = DB::select($sql);
 

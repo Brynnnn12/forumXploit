@@ -20,7 +20,18 @@
                     @endif
 
                     <small class="text-muted">
-                        By {{ $post->user_id }} • {{ $post->created_at }}
+                        By {{ $post->user_id }} •
+                        @php
+                            try {
+                                if (is_string($post->created_at)) {
+                                    echo \Carbon\Carbon::parse($post->created_at)->diffForHumans();
+                                } else {
+                                    echo $post->created_at->diffForHumans();
+                                }
+                            } catch (Exception $e) {
+                                echo $post->created_at ?? 'Unknown date';
+                            }
+                        @endphp
                     </small>
 
                     @if (Auth::check() && (Auth::id() == $post->user_id || Auth::user()->role === 'admin'))
@@ -53,44 +64,74 @@
                 </div>
             </div>
         </div>
-
         <div class="col-md-4">
             <div class="card">
                 <div class="card-header">Add Comment</div>
                 <div class="card-body">
-                    <div class="vulnerability-note">
-                        <strong>Vulnerability:</strong> No authentication required, content not sanitized.
-                    </div>
+                    @if (Auth::check())
+                        <div class="vulnerability-note">
+                            <strong>Vulnerability:</strong> Content not sanitized, XSS possible.
+                        </div>
 
-                    <form method="POST" action="{{ route('comment.store') }}">
-                        @csrf
-                        <input type="hidden" name="post_id" value="{{ $post->id }}">
-                        <div class="mb-3">
-                            <label for="content" class="form-label">Comment</label>
-                            <textarea class="form-control" id="content" name="content" rows="3" required
-                                placeholder="Try: <img src='x' onerror='alert(\"XSS\")'></textarea>
-                        <small class="text-muted">⚠️ HTML content is not sanitized</small>
+                        <form method="POST" action="{{ route('comment.store') }}">
+                            @csrf
+                            <input type="hidden" name="post_id" value="{{ $post->id }}">
+                            <div class="mb-3">
+                                <label for="content" class="form-label">Comment</label>
+                                <textarea class="form-control" id="content" name="content" rows="3" required
+                                    placeholder="Try: <img src='x' onerror='alert(\"XSS\")'></textarea>
+                                <small class="text-muted">⚠️ HTML content is not sanitized</small>
                                 </div>
                                 <button type="submit" class="btn btn-primary">Add Comment</button>
                             </form>
-                        </div>
-                    </div>
-
-                    <div class="card mt-3">
-                        <div class="card-header">SQL Injection Test</div>
-                        <div class="card-body">
-                            <div class="vulnerability-note">
-                                <strong>Vulnerability:</strong> SQL injection in post ID parameter.
+@else
+    <div class="alert alert-info">
+                                <i class="fas fa-info-circle me-2"></i>
+                                Anda harus <a href="{{ route('login') }}" class="alert-link">login</a> untuk menambahkan komentar.
                             </div>
-                            <p class="small">
-                                Try these URLs:
-                            </p>
-                            <ul class="small">
-                                <li><a href="/post/1 UNION SELECT 1,2,3,4,5,6,7,8">SQL Injection Test</a></li>
-                                <li><a href="/post/1'; DROP TABLE posts; --">Destructive Query</a></li>
-                            </ul>
+    @endif
+                    </div>
+                </div>
+
+                <div class="card mt-3">
+                    <div class="card-header">SQL Injection Test</div>
+                    <div class="card-body">
+                        <div class="vulnerability-note">
+                            <strong>Vulnerability:</strong> SQL injection in post ID parameter.
+                        </div>
+                        <p class="small">
+                            Try these URLs (click to test):
+                        </p>
+                        <ul class="small">
+                            <li><a href="/post/1 UNION SELECT 1,2,'Injected Title','Injected Content','',NOW(),NOW()" target="_blank">Basic UNION SELECT</a></li>
+                            <li><a href="/post/1 OR 1=1" target="_blank">OR 1=1 (show first result)</a></li>
+                            <li><a href="/post/1 UNION SELECT id,user_id,title,content,file_path,created_at,updated_at FROM posts WHERE id=2" target="_blank">Show post ID 2</a></li>
+                            <li><a href="/post/999 UNION SELECT 1,1,'Hacked Post','<script>
+                                alert(\"XSS via SQL Injection\")
+                            </script>','',NOW(),NOW()" target="_blank">Inject XSS via SQL</a></li>
+                            <li><a href="/post/1 UNION SELECT id,1,name,email,'password: ' || password,created_at,updated_at FROM users LIMIT 1" target="_blank">Extract user data</a></li>
+                        </ul>
+                        <div class="mt-3">
+                            <strong>Quick Test:</strong>
+                            <div class="input-group input-group-sm mt-2">
+                                <input type="text" class="form-control" id="sqlTest" placeholder="Enter SQL injection" value="1 OR 1=1">
+                                <button class="btn btn-outline-danger" onclick="testSQL()">Test</button>
+                            </div>
+                        </div>
+                        <script>
+                            function testSQL() {
+                                const input = document.getElementById('sqlTest').value;
+                                window.open('/post/' + input, '_blank');
+                            }
+                        </script>
+                        <div class="mt-3">
+                            <small class="text-danger">
+                                <i class="fas fa-exclamation-triangle me-1"></i>
+                                Vulnerability: Direct SQL parameter injection without sanitization
+                            </small>
                         </div>
                     </div>
                 </div>
             </div>
+        </div>
 @endsection
